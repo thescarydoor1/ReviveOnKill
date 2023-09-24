@@ -26,6 +26,7 @@ sealed class Plugin : BaseUnityPlugin
     sealed class PlayerData
     {
         public int timePassed = TIMER_DISABLED;
+        public int numRevives = 0;
     }
     static readonly ConditionalWeakTable<Player, PlayerData> cwt = new();
     static PlayerData Data(Player p) => cwt.GetValue(p, _ => new());
@@ -33,6 +34,13 @@ sealed class Plugin : BaseUnityPlugin
     private bool IsArtificer(Player p)
     {
         return ModManager.MSC && p.SlugCatClass == MoreSlugcatsEnums.SlugcatStatsName.Artificer;
+    }
+
+    private bool CanRevive(Player p)
+    {
+        return IsArtificer(p)
+            && (Options.MaxRevives.Value == 0
+                || Data(p).numRevives < Options.MaxRevives.Value);
     }
 
     private int MaxTime()
@@ -69,7 +77,7 @@ sealed class Plugin : BaseUnityPlugin
     {
         // Remove spear stun.
         if (self is Player p
-            && IsArtificer(p)
+            && CanRevive(p)
             && type == Creature.DamageType.Stab 
             && Options.ResistantToRegularSpears.Value)
         {
@@ -82,10 +90,11 @@ sealed class Plugin : BaseUnityPlugin
     {
         if (self is Scavenger
             && self.killTag?.realizedCreature is Player p
-            && IsArtificer(p)
+            && CanRevive(p)
             && Data(p).timePassed != TIMER_DISABLED)
         {
             Data(p).timePassed = TIMER_DISABLED;
+            Data(p).numRevives++;
             self.room.PlaySound(SoundID.Snail_Pop, self.killTag.realizedCreature.firstChunk.pos);
         }
         orig(self);
@@ -102,7 +111,7 @@ sealed class Plugin : BaseUnityPlugin
 
     private bool Player_SpearStick(On.Player.orig_SpearStick orig, Player self, Weapon source, float dmg, BodyChunk chunk, PhysicalObject.Appendage.Pos appPos, Vector2 direction)
     {
-        if (IsArtificer(self))
+        if (CanRevive(self))
         {
             if (source is ExplosiveSpear && Options.ResistantToExplosiveSpears.Value)
             {
