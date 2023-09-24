@@ -3,6 +3,9 @@ using MoreSlugcats;
 using Noise;
 using RWCustom;
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Security.Permissions;
 using UnityEngine;
@@ -15,29 +18,45 @@ using Random = UnityEngine.Random;
 
 namespace ReviveOnKill;
 
-[BepInPlugin("thescarydoor.reviveonkill", "ReviveOnKill", "1.1.0")]
+[BepInPlugin("thescarydoor.reviveonkill", "ReviveOnKill", "1.2.0")]
 sealed class Plugin : BaseUnityPlugin
 {
-    private const int TIMER_DISABLED = -1;
-    private const int TIMER_ENABLED = 0;
     bool atLeastOneSlugcatIsArtificer = false;
 
+    public FLabel label;
+
     // Each player has their own death timer.
-    sealed class PlayerData
+    public sealed class PlayerData
     {
-        public int timePassed = TIMER_DISABLED;
+        public Timer timeUntilDeath;
+        public Timer spearImmunityTime;
+        public int numRevives;
     }
     static readonly ConditionalWeakTable<Player, PlayerData> cwt = new();
-    static PlayerData Data(Player p) => cwt.GetValue(p, _ => new());
+    public static PlayerData Data(Player p) => cwt.GetValue(p, _ => new());
 
-    private bool IsArtificer(Player p)
+    public static bool IsArtificer(Player p)
     {
-        return ModManager.MSC && p.SlugCatClass == MoreSlugcatsEnums.SlugcatStatsName.Artificer;
+        return ModManager.MSC 
+            && (p.SlugCatClass == MoreSlugcatsEnums.SlugcatStatsName.Artificer
+                || Options.EnableOnAllSlugcatsHack.Value);
     }
 
-    private int MaxTime()
+    public static bool CanRevive(Player p)
     {
-        return Math.Max(1, (int)(Options.BleedoutTime.Value * 40)); // 40 ticks/second
+        return IsArtificer(p)
+            && (Options.MaxRevives.Value == 0
+                || Data(p).numRevives < Options.MaxRevives.Value);
+    }
+
+    private int MaxTimeUntilDeath()
+    {
+        return Math.Max(1, (int)Options.BleedoutTime.Value * 40); // 40 ticks/second
+    }
+
+    private int MaxSpearTime()
+    {
+        return (int)Options.SpearImmunityTime.Value * 40; // 40 ticks/second
     }
 
     public void OnEnable()
@@ -47,6 +66,9 @@ sealed class Plugin : BaseUnityPlugin
         On.RainWorld.OnModsInit += RainWorld_OnModsInit;
         On.RainWorldGame.ShutDownProcess += RainWorld_ShutDownProcess;
 
+        On.HUD.HUD.InitSinglePlayerHud += HUD_InitSinglePlayerHud;
+        On.HUD.HUD.InitMultiplayerHud += HUD_InitMultiplayerHud;
+
         On.Creature.Die += Creature_Die;
         On.Creature.Violence += Creature_Violence;
         On.Player.ctor += Player_ctor;
@@ -54,6 +76,7 @@ sealed class Plugin : BaseUnityPlugin
         On.Player.Update += Player_Update;
         On.Scavenger.Violence += Scavenger_Violence;
         On.Spear.HitSomething += Spear_HitSomething;
+
     }
 
     private void Creature_Violence(
@@ -69,7 +92,7 @@ sealed class Plugin : BaseUnityPlugin
     {
         // Remove spear stun.
         if (self is Player p
-            && IsArtificer(p)
+            && CanRevive(p)
             && type == Creature.DamageType.Stab 
             && Options.ResistantToRegularSpears.Value)
         {
@@ -82,10 +105,13 @@ sealed class Plugin : BaseUnityPlugin
     {
         if (self is Scavenger
             && self.killTag?.realizedCreature is Player p
-            && IsArtificer(p)
-            && Data(p).timePassed != TIMER_DISABLED)
+            && CanRevive(p)
+            && Data(p).timeUntilDeath.Active())
         {
-            Data(p).timePassed = TIMER_DISABLED;
+            Data(p).timeUntilDeath.Stop();
+            Data(p).spearImmunityTime.Start();
+            Data(p).numRevives++;
+
             self.room.PlaySound(SoundID.Snail_Pop, self.killTag.realizedCreature.firstChunk.pos);
         }
         orig(self);
@@ -95,14 +121,16 @@ sealed class Plugin : BaseUnityPlugin
         orig(self, abstractCreature, world);
         if (IsArtificer(self))
         {
-            Data(self).timePassed = TIMER_DISABLED;
+            Data(self).timeUntilDeath = new Timer(MaxTimeUntilDeath());
+            Data(self).spearImmunityTime = new Timer(MaxSpearTime());
+            Data(self).numRevives = 0;
             atLeastOneSlugcatIsArtificer = true;
         }
     }
 
     private bool Player_SpearStick(On.Player.orig_SpearStick orig, Player self, Weapon source, float dmg, BodyChunk chunk, PhysicalObject.Appendage.Pos appPos, Vector2 direction)
     {
-        if (IsArtificer(self))
+        if (CanRevive(self))
         {
             if (source is ExplosiveSpear && Options.ResistantToExplosiveSpears.Value)
             {
@@ -121,7 +149,10 @@ sealed class Plugin : BaseUnityPlugin
     private void Spark(Player player)
     {
         // Have a slight rampup for generating sparks.
-        float rampup = Custom.LerpMap(Data(player).timePassed, 0, MaxTime(), 0.8f, 1);
+        float rampup = Custom.LerpMap(
+            Data(player).timeUntilDeath.Time(), 
+            0, MaxTimeUntilDeath(), 
+            0.8f, 1);
         if (Random.value > (0.75f / rampup))
         {
             player.room.AddObject(new Explosion.ExplosionSmoke(player.mainBodyChunk.pos, Custom.RNV() * 2f * Random.value, 1f));
@@ -168,19 +199,23 @@ sealed class Plugin : BaseUnityPlugin
 
     private void Player_Update(On.Player.orig_Update orig, Player self, bool eu)
     {
-        if (IsArtificer(self))
+        if (CanRevive(self))
         {
-            if (Data(self).timePassed != TIMER_DISABLED && Data(self).timePassed < MaxTime())
+            if (Data(self).timeUntilDeath.Active())
             {
-                Data(self).timePassed++;
-                Spark(self);
+                if (Data(self).timeUntilDeath.Time() < MaxTimeUntilDeath())
+                {
+                    Spark(self);
+                } 
+                else
+                {
+                    Explode(self);
+                    self.Die();
+                }
             }
-            else if (Data(self).timePassed >= MaxTime())
-            {
-                Data(self).timePassed = TIMER_DISABLED;
-                Explode(self);
-                self.Die();
-            }
+
+            Data(self).timeUntilDeath.Update();
+            Data(self).spearImmunityTime.Update();
         }
         orig(self, eu);
     }
@@ -204,24 +239,37 @@ sealed class Plugin : BaseUnityPlugin
             && Options.ScavengersInstantlyDie.Value)
         {
             self.Die();
-        }
+        } 
     }
 
     private bool Spear_HitSomething(On.Spear.orig_HitSomething orig, Spear self, SharedPhysics.CollisionResult result, bool eu)
     {
         float oldBonus = self.spearDamageBonus;
-        if (result.obj is Player p && IsArtificer(p))
+        if (result.obj is Player p && CanRevive(p))
         {
             self.spearDamageBonus = 0f;
-            if (Data(p).timePassed == TIMER_DISABLED)
+            if (!Data(p).timeUntilDeath.Active()
+                && !Data(p).spearImmunityTime.Active())
             {
-                Data(p).timePassed = TIMER_ENABLED;
+                Data(p).timeUntilDeath.Start();
             }
         }
 
         bool ret = orig(self, result, eu);
         self.spearDamageBonus = oldBonus;
         return ret;
+    }
+
+    private void HUD_InitMultiplayerHud(On.HUD.HUD.orig_InitMultiplayerHud orig, HUD.HUD self, ArenaGameSession session)
+    {
+        orig(self, session);
+        self.AddPart(new ReviveCountHud(self, session.game.Players, isMultiplayer: true));
+    }
+
+    private void HUD_InitSinglePlayerHud(On.HUD.HUD.orig_InitSinglePlayerHud orig, HUD.HUD self, RoomCamera cam)
+    {
+        orig(self, cam);
+        self.AddPart(new ReviveCountHud(self, cam.game.Players, isMultiplayer: false));
     }
 
     private void GameSession_ctor(On.GameSession.orig_ctor orig, GameSession self, RainWorldGame game)

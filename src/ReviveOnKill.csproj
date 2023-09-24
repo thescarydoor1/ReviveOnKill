@@ -24,7 +24,7 @@
   </Target>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="taskkill /IM &quot;RainWorld.exe&quot; /F /FI &quot;STATUS eq RUNNING&quot;&#xD;&#xA;xcopy /Y $(TargetPath) ..\ReviveOnKill\Plugins\$(TargetName).dll&#xD;&#xA;xcopy /Y ..\assets ..\ReviveOnKill&#xD;&#xA;start ..\RainWorld.exe.lnk" />
+    <Exec Command="taskkill /IM &quot;RainWorld.exe&quot; /F /FI &quot;STATUS eq RUNNING&quot;&#xD;&#xA;echo f | xcopy /Y $(TargetPath) ..\ReviveOnKill\plugins\$(TargetName).dll&#xD;&#xA;xcopy /Y ..\assets ..\ReviveOnKill&#xD;&#xA;start ..\RainWorld.exe.lnk" />
   </Target>
 
 </Project>
