@@ -10,6 +10,8 @@ namespace ReviveOnKill
         public static Configurable<bool> ResistantToElectricSpears;
         public static Configurable<bool> ScavengersInstantlyDie;
         public static Configurable<float> BleedoutTime;
+        public static Configurable<int> MaxRevives;
+        public static Configurable<float> SpearImmunityTime;
         public static Configurable<Color> SparkColor;
         
         public Options()
@@ -19,6 +21,9 @@ namespace ReviveOnKill
             ResistantToElectricSpears = config.Bind("cfgResistantToElectricSpears", false);
             ScavengersInstantlyDie = config.Bind("cfgScavengersInstantlyDie", true);
             BleedoutTime = config.Bind("cfgBleedoutTime", 4f, new ConfigAcceptableRange<float>(0f, 60f));
+            MaxRevives = config.Bind("cfgMaxRevives", 0, new ConfigAcceptableRange<int>(0, 99));
+            SpearImmunityTime = config.Bind("cfgSpearImmunityTime", 0f, 
+                new ConfigAcceptableRange<float>(0f, 10f));
             SparkColor = config.Bind("cfgSparkColor", Color.white);
         }
 
@@ -46,8 +51,17 @@ namespace ReviveOnKill
             var entry5 = new OpUpdown(BleedoutTime, new Vector2(255, 600 - 191), 75);
             var units5 = new OpLabel(340, 600 - 187, "seconds");
 
-            var label6 = new OpLabel(40, 600 - 217, "Spark color");
-            var colorpicker6 = new OpColorPicker(SparkColor, new Vector2(40, 600 - 370));
+            var label8 = new OpLabel(40, 600 - 217, "Spark color");
+            var colorpicker8 = new OpColorPicker(SparkColor, new Vector2(40, 600 - 370));
+
+            var label6 = new OpLabel(40, 600 - 400, "Max revives until perma death (0 for unlimited): ");
+            var entry6 = new OpUpdown(MaxRevives, new Vector2(255, 600 - 400), 75);
+
+
+            var label7 = new OpLabel(40, 600 - 440, "Post-revive spear immunity: ");
+            var entry7 = new OpUpdown(SpearImmunityTime, new Vector2(255, 600 - 440), 75);
+            var units7 = new OpLabel(340, 600 - 440, "seconds");
+
 
             Tabs[0].AddItems(
                 titleLabel,
@@ -63,7 +77,12 @@ namespace ReviveOnKill
                 entry5,
                 units5,
                 label6,
-                colorpicker6);
+                entry6,
+                label7,
+                entry7,
+                units7,
+                label8,
+                colorpicker8);
         }
     }
 }
