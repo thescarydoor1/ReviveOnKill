@@ -18,7 +18,7 @@ namespace ReviveOnKill
             ResistantToExplosiveSpears = config.Bind("cfgResistantToExplosiveSpears", true);
             ResistantToElectricSpears = config.Bind("cfgResistantToElectricSpears", false);
             ScavengersInstantlyDie = config.Bind("cfgScavengersInstantlyDie", true);
-            BleedoutTime = config.Bind("cfgMaxBonusKarma", 4f, new ConfigAcceptableRange<float>(0f, 15f));
+            BleedoutTime = config.Bind("cfgBleedoutTime", 4f, new ConfigAcceptableRange<float>(0f, 60f));
             SparkColor = config.Bind("cfgSparkColor", Color.white);
         }
 

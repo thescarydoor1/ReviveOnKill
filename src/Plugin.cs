@@ -15,7 +15,7 @@ using Random = UnityEngine.Random;
 
 namespace ReviveOnKill;
 
-[BepInPlugin("thescarydoor.reviveonkill", "ReviveOnKill", "1.0.0")]
+[BepInPlugin("thescarydoor.reviveonkill", "ReviveOnKill", "1.1.0")]
 sealed class Plugin : BaseUnityPlugin
 {
     private const int TIMER_DISABLED = -1;
