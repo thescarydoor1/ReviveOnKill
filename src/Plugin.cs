@@ -18,15 +18,16 @@ namespace ReviveOnKill;
 [BepInPlugin("thescarydoor.reviveonkill", "ReviveOnKill", "1.1.0")]
 sealed class Plugin : BaseUnityPlugin
 {
-    private const int TIMER_DISABLED = -1;
-    private const int TIMER_ENABLED = 0;
     bool atLeastOneSlugcatIsArtificer = false;
+
+    public FLabel label;
 
     // Each player has their own death timer.
     sealed class PlayerData
     {
-        public int timePassed = TIMER_DISABLED;
+        public Timer timeUntilDeath;
         public int numRevives = 0;
+        public Timer spearImmunityTime;
     }
     static readonly ConditionalWeakTable<Player, PlayerData> cwt = new();
     static PlayerData Data(Player p) => cwt.GetValue(p, _ => new());
@@ -43,9 +44,14 @@ sealed class Plugin : BaseUnityPlugin
                 || Data(p).numRevives < Options.MaxRevives.Value);
     }
 
-    private int MaxTime()
+    private int MaxTimeUntilDeath()
     {
         return Math.Max(1, (int)(Options.BleedoutTime.Value * 40)); // 40 ticks/second
+    }
+
+    private int MaxSpearTime()
+    {
+        return Math.Max(1, (int)(Options.SpearImmunityTime.Value * 40)); // 40 ticks/second
     }
 
     public void OnEnable()
@@ -62,6 +68,29 @@ sealed class Plugin : BaseUnityPlugin
         On.Player.Update += Player_Update;
         On.Scavenger.Violence += Scavenger_Violence;
         On.Spear.HitSomething += Spear_HitSomething;
+
+        On.HUD.HUD.InitSinglePlayerHud += HUD_InitSinglePlayerHud;
+        On.HUD.HUD.InitMultiplayerHud += HUD_InitMultiplayerHud;
+    }
+
+    private void HUD_InitMultiplayerHud(On.HUD.HUD.orig_InitMultiplayerHud orig, HUD.HUD self, ArenaGameSession session)
+    {
+        orig(self, session);
+        label = new FLabel(Custom.GetDisplayFont(), $"{Options.MaxRevives.Value}");
+        label.x = self.rainWorld.screenSize.x / 2f;
+        label.y = self.rainWorld.screenSize.y / 2f;
+        label.color = Color.red;
+        self.fContainers[1].AddChild(label);
+    }
+
+    private void HUD_InitSinglePlayerHud(On.HUD.HUD.orig_InitSinglePlayerHud orig, HUD.HUD self, RoomCamera cam)
+    {
+        orig(self, cam);
+        label = new FLabel(Custom.GetDisplayFont(), "aaaa");
+        label.x = self.rainWorld.screenSize.x / 2f;
+        label.y = self.rainWorld.screenSize.y / 2f;
+        label.color = Color.red;
+        self.fContainers[1].AddChild(label);
     }
 
     private void Creature_Violence(
@@ -91,10 +120,17 @@ sealed class Plugin : BaseUnityPlugin
         if (self is Scavenger
             && self.killTag?.realizedCreature is Player p
             && CanRevive(p)
-            && Data(p).timePassed != TIMER_DISABLED)
+            && Data(p).timeUntilDeath.Active())
         {
-            Data(p).timePassed = TIMER_DISABLED;
+            Data(p).timeUntilDeath.Stop();
             Data(p).numRevives++;
+
+            if (Options.SpearImmunityTime.Value > 0)
+            {
+                Data(p).spearImmunityTime.Start();
+            }
+
+            label.text = $"{Options.MaxRevives.Value - Data(p).numRevives}";
             self.room.PlaySound(SoundID.Snail_Pop, self.killTag.realizedCreature.firstChunk.pos);
         }
         orig(self);
@@ -102,9 +138,11 @@ sealed class Plugin : BaseUnityPlugin
     private void Player_ctor(On.Player.orig_ctor orig, Player self, AbstractCreature abstractCreature, World world)
     {
         orig(self, abstractCreature, world);
-        if (IsArtificer(self))
+        if (CanRevive(self))
         {
-            Data(self).timePassed = TIMER_DISABLED;
+            Data(self).timeUntilDeath = new Timer(MaxTimeUntilDeath());
+            Data(self).numRevives = 0;
+            Data(self).spearImmunityTime = new Timer(MaxSpearTime());
             atLeastOneSlugcatIsArtificer = true;
         }
     }
@@ -130,7 +168,10 @@ sealed class Plugin : BaseUnityPlugin
     private void Spark(Player player)
     {
         // Have a slight rampup for generating sparks.
-        float rampup = Custom.LerpMap(Data(player).timePassed, 0, MaxTime(), 0.8f, 1);
+        float rampup = Custom.LerpMap(
+            Data(player).timeUntilDeath.Time(), 
+            0, MaxTimeUntilDeath(), 
+            0.8f, 1);
         if (Random.value > (0.75f / rampup))
         {
             player.room.AddObject(new Explosion.ExplosionSmoke(player.mainBodyChunk.pos, Custom.RNV() * 2f * Random.value, 1f));
@@ -177,19 +218,23 @@ sealed class Plugin : BaseUnityPlugin
 
     private void Player_Update(On.Player.orig_Update orig, Player self, bool eu)
     {
-        if (IsArtificer(self))
+        if (CanRevive(self))
         {
-            if (Data(self).timePassed != TIMER_DISABLED && Data(self).timePassed < MaxTime())
+            if (Data(self).timeUntilDeath.Active())
             {
-                Data(self).timePassed++;
-                Spark(self);
+                if (Data(self).timeUntilDeath.Time() < MaxTimeUntilDeath())
+                {
+                    Spark(self);
+                } 
+                else
+                {
+                    Explode(self);
+                    self.Die();
+                }
             }
-            else if (Data(self).timePassed >= MaxTime())
-            {
-                Data(self).timePassed = TIMER_DISABLED;
-                Explode(self);
-                self.Die();
-            }
+
+            Data(self).timeUntilDeath.Update();
+            Data(self).spearImmunityTime.Update();
         }
         orig(self, eu);
     }
@@ -213,18 +258,19 @@ sealed class Plugin : BaseUnityPlugin
             && Options.ScavengersInstantlyDie.Value)
         {
             self.Die();
-        }
+        } 
     }
 
     private bool Spear_HitSomething(On.Spear.orig_HitSomething orig, Spear self, SharedPhysics.CollisionResult result, bool eu)
     {
         float oldBonus = self.spearDamageBonus;
-        if (result.obj is Player p && IsArtificer(p))
+        if (result.obj is Player p && CanRevive(p))
         {
             self.spearDamageBonus = 0f;
-            if (Data(p).timePassed == TIMER_DISABLED)
+            if (!Data(p).timeUntilDeath.Active()
+                && !Data(p).spearImmunityTime.Active())
             {
-                Data(p).timePassed = TIMER_ENABLED;
+                Data(p).timeUntilDeath.Start();
             }
         }
 
@@ -254,5 +300,55 @@ sealed class Plugin : BaseUnityPlugin
     private void ClearMemory()
     {
         atLeastOneSlugcatIsArtificer = false;
+    }
+
+    class Timer
+    {
+        private int timeoutValue;
+        private int currentTime;
+
+        private const int TIMER_DISABLED = -1;
+        private const int TIMER_ENABLED = 0;
+
+        public Timer(int timeoutValue) 
+        {
+            this.timeoutValue = timeoutValue;
+            this.currentTime = TIMER_DISABLED;
+        }
+
+        public void Stop()
+        {
+            currentTime = TIMER_DISABLED;
+        }
+
+        public void Start() 
+        {
+            currentTime = TIMER_ENABLED;
+        }
+
+        public bool Active()
+        {
+            return currentTime != TIMER_DISABLED;
+        }
+
+        public int Time()
+        {
+            return currentTime;
+        }
+
+        public void Update()
+        {
+            if (Active())
+            {
+                if (currentTime < timeoutValue)
+                {
+                    currentTime++;
+                }
+                else
+                {
+                    currentTime = TIMER_DISABLED;
+                }
+            }
+        }
     }
 }
