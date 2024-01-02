@@ -1,8 +1,12 @@
 ﻿using BepInEx;
+using HUD;
 using MoreSlugcats;
 using Noise;
 using RWCustom;
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Security.Permissions;
 using UnityEngine;
@@ -46,12 +50,12 @@ sealed class Plugin : BaseUnityPlugin
 
     private int MaxTimeUntilDeath()
     {
-        return Math.Max(1, (int)(Options.BleedoutTime.Value * 40)); // 40 ticks/second
+        return Math.Max(1, (int)Options.BleedoutTime.Value * 40); // 40 ticks/second
     }
 
     private int MaxSpearTime()
     {
-        return Math.Max(1, (int)(Options.SpearImmunityTime.Value * 40)); // 40 ticks/second
+        return (int)Options.SpearImmunityTime.Value * 40; // 40 ticks/second
     }
 
     public void OnEnable()
@@ -76,11 +80,12 @@ sealed class Plugin : BaseUnityPlugin
     private void HUD_InitMultiplayerHud(On.HUD.HUD.orig_InitMultiplayerHud orig, HUD.HUD self, ArenaGameSession session)
     {
         orig(self, session);
-        label = new FLabel(Custom.GetDisplayFont(), $"{Options.MaxRevives.Value}");
-        label.x = self.rainWorld.screenSize.x / 2f;
-        label.y = self.rainWorld.screenSize.y / 2f;
-        label.color = Color.red;
-        self.fContainers[1].AddChild(label);
+        //label = new FLabel(Custom.GetDisplayFont(), $"{Options.MaxRevives.Value}");
+        //label.x = self.rainWorld.screenSize.x / 2f;
+        //label.y = self.rainWorld.screenSize.y / 2f;
+        //label.color = Color.red;
+        //self.fContainers[1].AddChild(label);
+        self.AddPart(new ReviveCountHud(self, session.game.Players));
     }
 
     private void HUD_InitSinglePlayerHud(On.HUD.HUD.orig_InitSinglePlayerHud orig, HUD.HUD self, RoomCamera cam)
@@ -124,13 +129,8 @@ sealed class Plugin : BaseUnityPlugin
         {
             Data(p).timeUntilDeath.Stop();
             Data(p).numRevives++;
+            Data(p).spearImmunityTime.Start();
 
-            if (Options.SpearImmunityTime.Value > 0)
-            {
-                Data(p).spearImmunityTime.Start();
-            }
-
-            label.text = $"{Options.MaxRevives.Value - Data(p).numRevives}";
             self.room.PlaySound(SoundID.Snail_Pop, self.killTag.realizedCreature.firstChunk.pos);
         }
         orig(self);
@@ -323,7 +323,10 @@ sealed class Plugin : BaseUnityPlugin
 
         public void Start() 
         {
-            currentTime = TIMER_ENABLED;
+            if (timeoutValue > 0)
+            {
+                currentTime = TIMER_ENABLED;
+            }
         }
 
         public bool Active()
@@ -348,6 +351,43 @@ sealed class Plugin : BaseUnityPlugin
                 {
                     currentTime = TIMER_DISABLED;
                 }
+            }
+        }
+    }
+
+    class ReviveCountHud : HudPart
+    {
+        private FLabel[] labels;
+        private List<AbstractCreature> players;
+        public ReviveCountHud(HUD.HUD hud, List<AbstractCreature> players) : base(hud)
+        {
+            labels = new FLabel[4];
+            for (int i = 0; i < labels.Length; i++)
+            {
+                labels[i] = new FLabel(Custom.GetDisplayFont(), "aaaa");
+                labels[i].x = hud.rainWorld.screenSize.x / 2f + 50 * i;
+                labels[i].y = hud.rainWorld.screenSize.y / 2f;
+                labels[i].color = Color.red;
+                hud.fContainers[1].AddChild(labels[i]);
+            }
+            this.players = players ?? new List<AbstractCreature>();
+        }
+
+        public override void Update()
+        {  
+            labels[3].text = "got here 1"; 
+            for (int i = 0; i < Math.Min(players.Count, labels.Length); i++)
+            {
+                Player p = players.ElementAt(i).realizedCreature as Player;
+                labels[i].text = $"{Options.MaxRevives.Value - Plugin.Data(p).numRevives}";
+            }
+        }
+
+        public override void ClearSprites()
+        {
+            foreach (FLabel label in labels)
+            {
+                label.RemoveFromContainer();
             }
         }
     }
