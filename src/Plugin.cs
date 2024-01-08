@@ -30,18 +30,18 @@ sealed class Plugin : BaseUnityPlugin
     sealed class PlayerData
     {
         public Timer timeUntilDeath;
-        public int numRevives = 0;
+        public int numRevives = -1;
         public Timer spearImmunityTime;
     }
     static readonly ConditionalWeakTable<Player, PlayerData> cwt = new();
     static PlayerData Data(Player p) => cwt.GetValue(p, _ => new());
 
-    private bool IsArtificer(Player p)
+    private static bool IsArtificer(Player p)
     {
         return ModManager.MSC && p.SlugCatClass == MoreSlugcatsEnums.SlugcatStatsName.Artificer;
     }
 
-    private bool CanRevive(Player p)
+    public static bool CanRevive(Player p)
     {
         return IsArtificer(p)
             && (Options.MaxRevives.Value == 0
@@ -80,22 +80,13 @@ sealed class Plugin : BaseUnityPlugin
     private void HUD_InitMultiplayerHud(On.HUD.HUD.orig_InitMultiplayerHud orig, HUD.HUD self, ArenaGameSession session)
     {
         orig(self, session);
-        //label = new FLabel(Custom.GetDisplayFont(), $"{Options.MaxRevives.Value}");
-        //label.x = self.rainWorld.screenSize.x / 2f;
-        //label.y = self.rainWorld.screenSize.y / 2f;
-        //label.color = Color.red;
-        //self.fContainers[1].AddChild(label);
         self.AddPart(new ReviveCountHud(self, session.game.Players));
     }
 
     private void HUD_InitSinglePlayerHud(On.HUD.HUD.orig_InitSinglePlayerHud orig, HUD.HUD self, RoomCamera cam)
     {
         orig(self, cam);
-        label = new FLabel(Custom.GetDisplayFont(), "aaaa");
-        label.x = self.rainWorld.screenSize.x / 2f;
-        label.y = self.rainWorld.screenSize.y / 2f;
-        label.color = Color.red;
-        self.fContainers[1].AddChild(label);
+        self.AddPart(new ReviveCountHud(self, cam.game.Players));
     }
 
     private void Creature_Violence(
@@ -138,7 +129,7 @@ sealed class Plugin : BaseUnityPlugin
     private void Player_ctor(On.Player.orig_ctor orig, Player self, AbstractCreature abstractCreature, World world)
     {
         orig(self, abstractCreature, world);
-        if (CanRevive(self))
+        if (IsArtificer(self))
         {
             Data(self).timeUntilDeath = new Timer(MaxTimeUntilDeath());
             Data(self).numRevives = 0;
@@ -359,27 +350,59 @@ sealed class Plugin : BaseUnityPlugin
     {
         private FLabel[] labels;
         private List<AbstractCreature> players;
+
+        private float fade = 0f;
+        private float lastFade = 0f;
         public ReviveCountHud(HUD.HUD hud, List<AbstractCreature> players) : base(hud)
         {
-            labels = new FLabel[4];
+            this.players = players ?? new List<AbstractCreature>();
+            labels = new FLabel[this.players.Count];
             for (int i = 0; i < labels.Length; i++)
             {
-                labels[i] = new FLabel(Custom.GetDisplayFont(), "aaaa");
-                labels[i].x = hud.rainWorld.screenSize.x / 2f + 50 * i;
-                labels[i].y = hud.rainWorld.screenSize.y / 2f;
-                labels[i].color = Color.red;
+                labels[i] = new FLabel(Custom.GetDisplayFont(), "");
                 hud.fContainers[1].AddChild(labels[i]);
             }
-            this.players = players ?? new List<AbstractCreature>();
+        }
+
+        private bool ShouldDisplayLives(Player p)
+        {
+            return IsArtificer(p) && Options.MaxRevives.Value > 0;
         }
 
         public override void Update()
-        {  
-            labels[3].text = "got here 1"; 
-            for (int i = 0; i < Math.Min(players.Count, labels.Length); i++)
+        {
+            if (hud.foodMeter != null)
             {
-                Player p = players.ElementAt(i).realizedCreature as Player;
-                labels[i].text = $"{Options.MaxRevives.Value - Plugin.Data(p).numRevives}";
+                for (int i = 0; i < labels.Length; i++)
+                {
+                    float labelStart = hud.rainWorld.screenSize.x 
+                                        - hud.foodMeter.pos.x 
+                                        - 75f 
+                                        + (3 - labels.Length) * 30f;
+                    labels[i].x = labelStart + i * 30f;
+                    labels[i].y = hud.foodMeter.pos.y - 30;
+
+                    PlayerState ps = players.ElementAt(i).state as PlayerState;
+                    labels[i].color = PlayerGraphics.SlugcatColor(ps.slugcatCharacter);
+
+                    Player p = players.ElementAt(i).realizedCreature as Player;
+                    if (ShouldDisplayLives(p))
+                    {
+                        int lives = Options.MaxRevives.Value - Data(p).numRevives;
+                        labels[i].text = $"{lives}";
+                    }
+
+                }
+                fade = hud.foodMeter.fade;
+            }
+            lastFade = fade;
+        }
+
+        public override void Draw(float timeStacker)
+        {
+            foreach (var label in labels)
+            {
+                label.alpha = Mathf.Lerp(lastFade, fade, timeStacker);
             }
         }
 
