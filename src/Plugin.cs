@@ -1,5 +1,4 @@
 ﻿using BepInEx;
-using HUD;
 using MoreSlugcats;
 using Noise;
 using RWCustom;
@@ -27,16 +26,16 @@ sealed class Plugin : BaseUnityPlugin
     public FLabel label;
 
     // Each player has their own death timer.
-    sealed class PlayerData
+    public sealed class PlayerData
     {
         public Timer timeUntilDeath;
-        public int numRevives = -1;
         public Timer spearImmunityTime;
+        public int numRevives;
     }
     static readonly ConditionalWeakTable<Player, PlayerData> cwt = new();
-    static PlayerData Data(Player p) => cwt.GetValue(p, _ => new());
+    public static PlayerData Data(Player p) => cwt.GetValue(p, _ => new());
 
-    private static bool IsArtificer(Player p)
+    public static bool IsArtificer(Player p)
     {
         return ModManager.MSC && p.SlugCatClass == MoreSlugcatsEnums.SlugcatStatsName.Artificer;
     }
@@ -65,6 +64,9 @@ sealed class Plugin : BaseUnityPlugin
         On.RainWorld.OnModsInit += RainWorld_OnModsInit;
         On.RainWorldGame.ShutDownProcess += RainWorld_ShutDownProcess;
 
+        On.HUD.HUD.InitSinglePlayerHud += HUD_InitSinglePlayerHud;
+        On.HUD.HUD.InitMultiplayerHud += HUD_InitMultiplayerHud;
+
         On.Creature.Die += Creature_Die;
         On.Creature.Violence += Creature_Violence;
         On.Player.ctor += Player_ctor;
@@ -73,20 +75,6 @@ sealed class Plugin : BaseUnityPlugin
         On.Scavenger.Violence += Scavenger_Violence;
         On.Spear.HitSomething += Spear_HitSomething;
 
-        On.HUD.HUD.InitSinglePlayerHud += HUD_InitSinglePlayerHud;
-        On.HUD.HUD.InitMultiplayerHud += HUD_InitMultiplayerHud;
-    }
-
-    private void HUD_InitMultiplayerHud(On.HUD.HUD.orig_InitMultiplayerHud orig, HUD.HUD self, ArenaGameSession session)
-    {
-        orig(self, session);
-        self.AddPart(new ReviveCountHud(self, session.game.Players, isMultiplayer:true));
-    }
-
-    private void HUD_InitSinglePlayerHud(On.HUD.HUD.orig_InitSinglePlayerHud orig, HUD.HUD self, RoomCamera cam)
-    {
-        orig(self, cam);
-        self.AddPart(new ReviveCountHud(self, cam.game.Players, isMultiplayer:false));
     }
 
     private void Creature_Violence(
@@ -119,8 +107,8 @@ sealed class Plugin : BaseUnityPlugin
             && Data(p).timeUntilDeath.Active())
         {
             Data(p).timeUntilDeath.Stop();
-            Data(p).numRevives++;
             Data(p).spearImmunityTime.Start();
+            Data(p).numRevives++;
 
             self.room.PlaySound(SoundID.Snail_Pop, self.killTag.realizedCreature.firstChunk.pos);
         }
@@ -132,8 +120,8 @@ sealed class Plugin : BaseUnityPlugin
         if (IsArtificer(self))
         {
             Data(self).timeUntilDeath = new Timer(MaxTimeUntilDeath());
-            Data(self).numRevives = 0;
             Data(self).spearImmunityTime = new Timer(MaxSpearTime());
+            Data(self).numRevives = 0;
             atLeastOneSlugcatIsArtificer = true;
         }
     }
@@ -270,6 +258,18 @@ sealed class Plugin : BaseUnityPlugin
         return ret;
     }
 
+    private void HUD_InitMultiplayerHud(On.HUD.HUD.orig_InitMultiplayerHud orig, HUD.HUD self, ArenaGameSession session)
+    {
+        orig(self, session);
+        self.AddPart(new ReviveCountHud(self, session.game.Players, isMultiplayer: true));
+    }
+
+    private void HUD_InitSinglePlayerHud(On.HUD.HUD.orig_InitSinglePlayerHud orig, HUD.HUD self, RoomCamera cam)
+    {
+        orig(self, cam);
+        self.AddPart(new ReviveCountHud(self, cam.game.Players, isMultiplayer: false));
+    }
+
     private void GameSession_ctor(On.GameSession.orig_ctor orig, GameSession self, RainWorldGame game)
     {
         orig(self, game);
@@ -291,159 +291,5 @@ sealed class Plugin : BaseUnityPlugin
     private void ClearMemory()
     {
         atLeastOneSlugcatIsArtificer = false;
-    }
-
-    class Timer
-    {
-        private int timeoutValue;
-        private int currentTime;
-
-        private const int TIMER_DISABLED = -1;
-        private const int TIMER_ENABLED = 0;
-
-        public Timer(int timeoutValue) 
-        {
-            this.timeoutValue = timeoutValue;
-            this.currentTime = TIMER_DISABLED;
-        }
-
-        public void Stop()
-        {
-            currentTime = TIMER_DISABLED;
-        }
-
-        public void Start() 
-        {
-            if (timeoutValue > 0)
-            {
-                currentTime = TIMER_ENABLED;
-            }
-        }
-
-        public bool Active()
-        {
-            return currentTime != TIMER_DISABLED;
-        }
-
-        public int Time()
-        {
-            return currentTime;
-        }
-
-        public void Update()
-        {
-            if (Active())
-            {
-                if (currentTime < timeoutValue)
-                {
-                    currentTime++;
-                }
-                else
-                {
-                    currentTime = TIMER_DISABLED;
-                }
-            }
-        }
-    }
-
-    class ReviveCountHud : HudPart
-    {
-        private FLabel[] labels;
-        private List<AbstractCreature> players;
-
-        private float fade = 0f;
-        private float lastFade = 0f;
-
-        private bool isMultiplayer;
-
-        public ReviveCountHud(HUD.HUD hud, List<AbstractCreature> players, bool isMultiplayer) : base(hud)
-        {
-            this.players = players ?? new List<AbstractCreature>();
-            labels = new FLabel[this.players.Count];
-            for (int i = 0; i < labels.Length; i++)
-            {
-                labels[i] = new FLabel(Custom.GetDisplayFont(), "");
-                hud.fContainers[1].AddChild(labels[i]);
-            }
-
-            this.isMultiplayer = isMultiplayer;
-        }
-
-        private bool ShouldDisplayLives(Player p)
-        {
-            return IsArtificer(p) && Options.MaxRevives.Value > 0;
-        }
-
-        public override void Update()
-        {
-            if (isMultiplayer)
-            {
-                // Sad attempt to center the live counts.
-                float labelStart = hud.rainWorld.screenSize.x / 2f
-                                    - (labels.Length * 30f) / 2f + 20f;
-                for (int i = 0; i < Math.Min(players.Count, labels.Length); i++)
-                {
-                    labels[i].x = labelStart + i * 30f;
-                    labels[i].y = hud.rainWorld.screenSize.y - 30f;
-
-                    PlayerState ps = players.ElementAt(i).state as PlayerState;
-                    labels[i].color = PlayerGraphics.SlugcatColor(ps.slugcatCharacter);
-
-                    Player p = players.ElementAt(i).realizedCreature as Player;
-                    if (ShouldDisplayLives(p))
-                    {
-                        int lives = Options.MaxRevives.Value - Data(p).numRevives;
-                        labels[i].text = $"{lives}";
-                    }
-                }
-            }
-            else
-            {
-                if (hud.foodMeter != null)
-                {
-                    for (int i = 0; i < labels.Length; i++)
-                    {
-                        float labelStart = hud.rainWorld.screenSize.x
-                                            - hud.foodMeter.pos.x
-                                            - 75f
-                                            + (3 - labels.Length) * 30f;
-                        labels[i].x = labelStart + i * 30f;
-                        labels[i].y = hud.foodMeter.pos.y - 30;
-
-                        PlayerState ps = players.ElementAt(i).state as PlayerState;
-                        labels[i].color = PlayerGraphics.SlugcatColor(ps.slugcatCharacter);
-
-                        Player p = players.ElementAt(i).realizedCreature as Player;
-                        if (ShouldDisplayLives(p))
-                        {
-                            int lives = Options.MaxRevives.Value - Data(p).numRevives;
-                            labels[i].text = $"{lives}";
-                        }
-
-                    }
-                    fade = hud.foodMeter.fade;
-                }
-                lastFade = fade;
-            }
-        }
-
-        public override void Draw(float timeStacker)
-        {
-            if (!isMultiplayer)
-            {
-                foreach (var label in labels)
-                {
-                    label.alpha = Mathf.Lerp(lastFade, fade, timeStacker);
-                }
-            }
-        }
-
-        public override void ClearSprites()
-        {
-            foreach (FLabel label in labels)
-            {
-                label.RemoveFromContainer();
-            }
-        }
     }
 }
