@@ -80,13 +80,13 @@ sealed class Plugin : BaseUnityPlugin
     private void HUD_InitMultiplayerHud(On.HUD.HUD.orig_InitMultiplayerHud orig, HUD.HUD self, ArenaGameSession session)
     {
         orig(self, session);
-        self.AddPart(new ReviveCountHud(self, session.game.Players));
+        self.AddPart(new ReviveCountHud(self, session.game.Players, isMultiplayer:true));
     }
 
     private void HUD_InitSinglePlayerHud(On.HUD.HUD.orig_InitSinglePlayerHud orig, HUD.HUD self, RoomCamera cam)
     {
         orig(self, cam);
-        self.AddPart(new ReviveCountHud(self, cam.game.Players));
+        self.AddPart(new ReviveCountHud(self, cam.game.Players, isMultiplayer:false));
     }
 
     private void Creature_Violence(
@@ -353,7 +353,10 @@ sealed class Plugin : BaseUnityPlugin
 
         private float fade = 0f;
         private float lastFade = 0f;
-        public ReviveCountHud(HUD.HUD hud, List<AbstractCreature> players) : base(hud)
+
+        private bool isMultiplayer;
+
+        public ReviveCountHud(HUD.HUD hud, List<AbstractCreature> players, bool isMultiplayer) : base(hud)
         {
             this.players = players ?? new List<AbstractCreature>();
             labels = new FLabel[this.players.Count];
@@ -362,6 +365,8 @@ sealed class Plugin : BaseUnityPlugin
                 labels[i] = new FLabel(Custom.GetDisplayFont(), "");
                 hud.fContainers[1].AddChild(labels[i]);
             }
+
+            this.isMultiplayer = isMultiplayer;
         }
 
         private bool ShouldDisplayLives(Player p)
@@ -371,16 +376,15 @@ sealed class Plugin : BaseUnityPlugin
 
         public override void Update()
         {
-            if (hud.foodMeter != null)
+            if (isMultiplayer)
             {
-                for (int i = 0; i < labels.Length; i++)
+                // Sad attempt to center the live counts.
+                float labelStart = hud.rainWorld.screenSize.x / 2f
+                                    - (labels.Length * 30f) / 2f + 20f;
+                for (int i = 0; i < Math.Min(players.Count, labels.Length); i++)
                 {
-                    float labelStart = hud.rainWorld.screenSize.x 
-                                        - hud.foodMeter.pos.x 
-                                        - 75f 
-                                        + (3 - labels.Length) * 30f;
                     labels[i].x = labelStart + i * 30f;
-                    labels[i].y = hud.foodMeter.pos.y - 30;
+                    labels[i].y = hud.rainWorld.screenSize.y - 30f;
 
                     PlayerState ps = players.ElementAt(i).state as PlayerState;
                     labels[i].color = PlayerGraphics.SlugcatColor(ps.slugcatCharacter);
@@ -391,18 +395,46 @@ sealed class Plugin : BaseUnityPlugin
                         int lives = Options.MaxRevives.Value - Data(p).numRevives;
                         labels[i].text = $"{lives}";
                     }
-
                 }
-                fade = hud.foodMeter.fade;
             }
-            lastFade = fade;
+            else
+            {
+                if (hud.foodMeter != null)
+                {
+                    for (int i = 0; i < labels.Length; i++)
+                    {
+                        float labelStart = hud.rainWorld.screenSize.x
+                                            - hud.foodMeter.pos.x
+                                            - 75f
+                                            + (3 - labels.Length) * 30f;
+                        labels[i].x = labelStart + i * 30f;
+                        labels[i].y = hud.foodMeter.pos.y - 30;
+
+                        PlayerState ps = players.ElementAt(i).state as PlayerState;
+                        labels[i].color = PlayerGraphics.SlugcatColor(ps.slugcatCharacter);
+
+                        Player p = players.ElementAt(i).realizedCreature as Player;
+                        if (ShouldDisplayLives(p))
+                        {
+                            int lives = Options.MaxRevives.Value - Data(p).numRevives;
+                            labels[i].text = $"{lives}";
+                        }
+
+                    }
+                    fade = hud.foodMeter.fade;
+                }
+                lastFade = fade;
+            }
         }
 
         public override void Draw(float timeStacker)
         {
-            foreach (var label in labels)
+            if (!isMultiplayer)
             {
-                label.alpha = Mathf.Lerp(lastFade, fade, timeStacker);
+                foreach (var label in labels)
+                {
+                    label.alpha = Mathf.Lerp(lastFade, fade, timeStacker);
+                }
             }
         }
 
