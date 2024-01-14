@@ -18,7 +18,7 @@ using Random = UnityEngine.Random;
 
 namespace ReviveOnKill;
 
-[BepInPlugin("thescarydoor.reviveonkill", "ReviveOnKill", "1.1.0")]
+[BepInPlugin("thescarydoor.reviveonkill", "ReviveOnKill", "1.2.0")]
 sealed class Plugin : BaseUnityPlugin
 {
     bool atLeastOneSlugcatIsArtificer = false;
@@ -37,7 +37,9 @@ sealed class Plugin : BaseUnityPlugin
 
     public static bool IsArtificer(Player p)
     {
-        return ModManager.MSC && p.SlugCatClass == MoreSlugcatsEnums.SlugcatStatsName.Artificer;
+        return ModManager.MSC 
+            && (p.SlugCatClass == MoreSlugcatsEnums.SlugcatStatsName.Artificer
+                || Options.EnableOnAllSlugcatsHack.Value);
     }
 
     public static bool CanRevive(Player p)
