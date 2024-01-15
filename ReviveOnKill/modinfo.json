@@ -1,10 +1,10 @@
 ﻿{
   "id": "thescarydoor.reviveonkill",
   "name": "Artificer Revive on Kill",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "authors": "TheScaryDoor",
   "target_game_version": "v1.9",
-  "description": "Artificer gains not-deadness when killing scavengers.<LINE><LINE>Kill a scavenger quickly after getting hit with a spear to evade death. Configurable in the remix menu.",
+  "description": "Artificer gains not-deadness when killing scavengers.<LINE><LINE>Kill a scavenger quickly after getting hit with a spear to evade death. Configurable in the remix menu.<LINE><LINE>Source: https://github.com/thescarydoor1/ReviveOnKill",
   "tags": ["Game Mechanics", "Accessibility"],
   "requirements": [],
   "requirements_names": [],

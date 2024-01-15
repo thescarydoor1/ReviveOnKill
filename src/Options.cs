@@ -28,7 +28,7 @@ namespace ReviveOnKill
                 new ConfigAcceptableRange<float>(0f, 10f));
             SparkColor = config.Bind("cfgSparkColor", Color.white);
 
-            EnableOnAllSlugcatsHack = config.Bind("cfgEnableOnAllSlucatsHack", false);
+            EnableOnAllSlugcatsHack = config.Bind("cfgEnableOnAllSlugcatsHack", false);
         }
 
         public override void Initialize()

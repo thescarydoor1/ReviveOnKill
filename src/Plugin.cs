@@ -18,7 +18,7 @@ using Random = UnityEngine.Random;
 
 namespace ReviveOnKill;
 
-[BepInPlugin("thescarydoor.reviveonkill", "ReviveOnKill", "1.2.0")]
+[BepInPlugin("thescarydoor.reviveonkill", "ReviveOnKill", "1.2.1")]
 sealed class Plugin : BaseUnityPlugin
 {
     bool atLeastOneSlugcatIsArtificer = false;

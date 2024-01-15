@@ -35,7 +35,7 @@ namespace ReviveOnKill
 
         private bool ShouldDisplayLives(Player p)
         {
-            return Plugin.IsArtificer(p) && Options.MaxRevives.Value > 0;
+            return p != null && Plugin.IsArtificer(p) && Options.MaxRevives.Value > 0;
         }
 
         public override void Update()
