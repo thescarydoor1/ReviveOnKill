@@ -18,7 +18,7 @@ using Random = UnityEngine.Random;
 
 namespace ReviveOnKill;
 
-[BepInPlugin("thescarydoor.reviveonkill", "ReviveOnKill", "1.2.1")]
+[BepInPlugin("thescarydoor.reviveonkill", "ReviveOnKill", "1.2.2")]
 sealed class Plugin : BaseUnityPlugin
 {
     bool atLeastOneSlugcatIsArtificer = false;
@@ -38,6 +38,9 @@ sealed class Plugin : BaseUnityPlugin
     public static bool IsArtificer(Player p)
     {
         return ModManager.MSC 
+            && !p.isNPC // Beastmaster mod initializes Artificer NPCs as
+                        // Slugpups, which causes crashes.  Disable for
+                        // all NPCs as a workaround.
             && (p.SlugCatClass == MoreSlugcatsEnums.SlugcatStatsName.Artificer
                 || Options.EnableOnAllSlugcatsHack.Value);
     }
@@ -206,7 +209,7 @@ sealed class Plugin : BaseUnityPlugin
                 if (Data(self).timeUntilDeath.Time() < MaxTimeUntilDeath())
                 {
                     Spark(self);
-                } 
+                }
                 else
                 {
                     Explode(self);
