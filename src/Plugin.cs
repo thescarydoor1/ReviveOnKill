@@ -23,8 +23,6 @@ sealed class Plugin : BaseUnityPlugin
 {
     bool atLeastOneSlugcatIsArtificer = false;
 
-    public FLabel label;
-
     // Each player has their own death timer.
     public sealed class PlayerData
     {
@@ -37,7 +35,7 @@ sealed class Plugin : BaseUnityPlugin
 
     public static bool IsArtificer(Player p)
     {
-        return ModManager.MSC 
+        return ModManager.MSC
             && !p.isNPC // Beastmaster mod initializes Artificer NPCs as
                         // Slugpups, which causes crashes.  Disable for
                         // all NPCs as a workaround.
@@ -64,10 +62,10 @@ sealed class Plugin : BaseUnityPlugin
 
     public void OnEnable()
     {
-        // Startup and Cleanup
+        Logger.LogDebug("ReviveOnKill Enabled");
+        MachineConnector.SetRegisteredOI("thescarydoor.reviveonkill", new Options());
+
         On.GameSession.ctor += GameSession_ctor;
-        On.RainWorld.OnModsInit += RainWorld_OnModsInit;
-        On.RainWorldGame.ShutDownProcess += RainWorld_ShutDownProcess;
 
         On.HUD.HUD.InitSinglePlayerHud += HUD_InitSinglePlayerHud;
         On.HUD.HUD.InitMultiplayerHud += HUD_InitMultiplayerHud;
@@ -79,7 +77,22 @@ sealed class Plugin : BaseUnityPlugin
         On.Player.Update += Player_Update;
         On.Scavenger.Violence += Scavenger_Violence;
         On.Spear.HitSomething += Spear_HitSomething;
+    }
 
+    public void OnDisable()
+    {
+        On.GameSession.ctor -= GameSession_ctor;
+
+        On.HUD.HUD.InitSinglePlayerHud -= HUD_InitSinglePlayerHud;
+        On.HUD.HUD.InitMultiplayerHud -= HUD_InitMultiplayerHud;
+
+        On.Creature.Die -= Creature_Die;
+        On.Creature.Violence -= Creature_Violence;
+        On.Player.ctor -= Player_ctor;
+        On.Player.SpearStick -= Player_SpearStick;
+        On.Player.Update -= Player_Update;
+        On.Scavenger.Violence -= Scavenger_Violence;
+        On.Spear.HitSomething -= Spear_HitSomething;
     }
 
     private void Creature_Violence(
@@ -278,23 +291,6 @@ sealed class Plugin : BaseUnityPlugin
     private void GameSession_ctor(On.GameSession.orig_ctor orig, GameSession self, RainWorldGame game)
     {
         orig(self, game);
-        ClearMemory();
-    }
-    private void RainWorld_OnModsInit(On.RainWorld.orig_OnModsInit orig, RainWorld self)
-    {
-        orig(self);
-        MachineConnector.SetRegisteredOI("thescarydoor.reviveonkill", new Options());
-        Logger.LogDebug("ReviveOnKill Enabled");
-    }
-
-    private void RainWorld_ShutDownProcess(On.RainWorldGame.orig_ShutDownProcess orig, RainWorldGame self)
-    {
-        orig(self);
-        ClearMemory();
-    }
-
-    private void ClearMemory()
-    {
         atLeastOneSlugcatIsArtificer = false;
     }
 }
