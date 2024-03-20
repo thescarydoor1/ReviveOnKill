@@ -18,7 +18,7 @@ using Random = UnityEngine.Random;
 
 namespace ReviveOnKill;
 
-[BepInPlugin("thescarydoor.reviveonkill", "ReviveOnKill", "1.2.2")]
+[BepInPlugin("thescarydoor.reviveonkill", "ReviveOnKill", "1.2.4")]
 sealed class Plugin : BaseUnityPlugin
 {
     bool atLeastOneSlugcatIsArtificer = false;
@@ -63,12 +63,11 @@ sealed class Plugin : BaseUnityPlugin
     public void OnEnable()
     {
         Logger.LogDebug("ReviveOnKill Enabled");
-        MachineConnector.SetRegisteredOI("thescarydoor.reviveonkill", new Options());
-
         On.GameSession.ctor += GameSession_ctor;
 
         On.HUD.HUD.InitSinglePlayerHud += HUD_InitSinglePlayerHud;
         On.HUD.HUD.InitMultiplayerHud += HUD_InitMultiplayerHud;
+        On.RainWorld.OnModsInit += RainWorld_OnModsInit;
 
         On.Creature.Die += Creature_Die;
         On.Creature.Violence += Creature_Violence;
@@ -77,6 +76,13 @@ sealed class Plugin : BaseUnityPlugin
         On.Player.Update += Player_Update;
         On.Scavenger.Violence += Scavenger_Violence;
         On.Spear.HitSomething += Spear_HitSomething;
+    }
+
+    private void RainWorld_OnModsInit(On.RainWorld.orig_OnModsInit orig, RainWorld self)
+    {
+        orig(self);
+        bool result = MachineConnector.SetRegisteredOI("thescarydoor.reviveonkill", new Options());
+        Logger.LogDebug($"{result}");
     }
 
     public void OnDisable()
